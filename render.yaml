@@ -1,9 +1,10 @@
 services:
   - type: web
     name: beam-cloud
-    runtime: docker
+    runtime: python
     plan: free
-    dockerfilePath: ./Dockerfile
+    buildCommand: pip install -r requirements.txt && python app.py --prepare
+    startCommand: gunicorn app:app
     healthCheckPath: /healthz
     envVars:
       - key: BEAM_SESSION_KEY
