@@ -244,3 +244,17 @@ body.crew-mode #toggle-terminal,body.crew-mode #toggle-inspector{display:none}bo
  dialog{max-width:calc(100vw - 24px)}.dialog-content{padding:22px 18px}.cloud-computer-dialog{padding:22px}.cloud-overlay{padding:16px}#toast{max-width:calc(100vw - 32px);font-size:11px}
  .crew-header{padding:16px;gap:10px}.crew-header-actions{width:100%}.crew-header-actions>button{font-size:11px}.crew-content{display:flex;flex-direction:column;overflow:auto}.crew-team-heading{min-height:35px;flex-shrink:0;border-right:0}.crew-bots{flex-direction:row;min-height:85px;max-height:100px;overflow-x:auto;flex-shrink:0;border-right:0;padding:3px 8px 8px}.crew-bot-card{min-width:145px;min-height:72px}.crew-bot-main .crew-bot-state{font-size:9px}.crew-desk{flex-direction:column;flex:1;min-height:570px;margin:0}.crew-task-panel{width:100%!important;max-height:190px;border-right:0;border-bottom:1px solid var(--border)}.crew-panel-title{padding:10px 15px}.crew-filters{padding:0 15px 8px}.crew-task-detail{min-height:380px}.crew-conversation{padding:16px 13px 8px}.crew-reply-area{padding:0 12px 14px}.crew-task-empty{padding:24px}.crew-detail-header{padding:15px}
 }
+
+/* Model picker, self-review and approve-everything */
+.model-picker{cursor:pointer;border-radius:8px;padding:4px 8px}.model-picker:hover,.model-picker:focus-visible{background:var(--hover);outline:none}
+#model-dialog{width:min(560px,94vw);max-height:88vh;padding:0;border:1px solid var(--border);border-radius:14px;background:var(--panel);color:var(--ink)}
+#model-dialog::backdrop{background:rgba(0,0,0,.5)}.model-dialog{display:flex;flex-direction:column;gap:14px;padding:20px;max-height:88vh;overflow:auto}
+.model-group h3{margin:0 0 8px;font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--dim);font-weight:600}
+.model-option{display:flex;align-items:center;gap:12px;padding:10px 12px;border:1px solid var(--border);border-radius:10px;margin-bottom:6px;cursor:pointer;background:var(--raised)}
+.model-option:hover{border-color:var(--accent)}.model-option:has(input:checked){border-color:var(--accent);box-shadow:0 0 0 1px var(--accent) inset}
+.model-option-main{display:flex;flex-direction:column;flex:1;min-width:0}.model-option-main small{color:var(--muted);margin-top:2px}
+.model-usage{color:var(--accent);font-size:10px;letter-spacing:1px;white-space:nowrap}.model-note{color:var(--muted);font-size:12px;margin:6px 0 0;line-height:1.45}
+#model-dialog select,.model-bot-field select{width:100%;padding:8px 10px;border-radius:8px;border:1px solid var(--border);background:var(--input);color:var(--ink)}
+.model-actions{display:flex;justify-content:flex-end;align-items:center;gap:12px}.model-bot-field{display:flex;flex-direction:column;gap:6px;margin-top:12px}.model-bot-field small{color:var(--muted)}
+.notice.reflect{border-left:3px solid var(--dim)}.notice.reflect.ok{border-left-color:var(--green);color:var(--green)}.notice.reflect.revise{border-left-color:var(--orange)}
+#mode option[value=auto]{color:var(--orange)}

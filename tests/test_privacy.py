@@ -53,6 +53,7 @@ class PrivacyTests(unittest.TestCase):
         self.folder = self.root / 'project'
         self.folder.mkdir()
         self.store = Store(self.root / 'data')
+        self.store.save_settings({'reflection':'off'})  # review passes have their own tests
         self.agent = Agent(self.store)
         self.pid = self.store.add_project(self.folder)['id']
         self.sid = self.store.create_session(self.pid)['id']

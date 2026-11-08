@@ -1,6 +1,7 @@
 """Small, stateless Render gateway. User jobs and databases stay in Codespaces."""
 from __future__ import annotations
 import base64
+import functools
 import hashlib
 import io
 import json
@@ -26,8 +27,24 @@ SESSION_TTL = 7 * 86400
 MAX_WIRE = 64_000_000
 
 
+# Files in worker/ that belong to the older remote-runner design and are never installed in the Codespace.
+WORKER_SKIP = {'runner.py', 'crew_daemon.py', 'setup.py', 'requirements.txt'}
+
+
+@functools.lru_cache(maxsize=1)
 def bundle():
-    return (ROOT / 'worker.zip').read_bytes()
+    """The Codespace worker kit: worker/*.py plus its dependency list, zipped the same way every time.
+
+    The bytes are identical on every build, so the Codespace reuses its installed environment until the code changes."""
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, 'w', zipfile.ZIP_DEFLATED) as archive:
+        files = [(path.name, path) for path in sorted((ROOT / 'worker').glob('*.py')) if path.name not in WORKER_SKIP]
+        files.append(('requirements-cloud-worker.txt', ROOT / 'worker' / 'requirements-cloud.txt'))
+        for name, path in files:
+            info = zipfile.ZipInfo(name, (2026, 1, 1, 0, 0, 0))
+            info.compress_type = zipfile.ZIP_DEFLATED
+            archive.writestr(info, path.read_bytes().replace(b'\r\n', b'\n'))
+    return buffer.getvalue()
 
 
 

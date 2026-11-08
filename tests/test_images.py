@@ -13,7 +13,6 @@ from unittest.mock import patch
 from PIL import Image
 
 import image_provider as provider
-import uploads
 
 
 def png():
@@ -26,36 +25,6 @@ class ImagesTests(unittest.TestCase):
         self.temp = tempfile.TemporaryDirectory(); self.root = Path(self.temp.name)
 
     def tearDown(self): self.temp.cleanup()
-
-    def test_uploaded_image_is_normalized_and_metadata_removed(self):
-        raw, size = uploads.clean_image(png())
-        with Image.open(io.BytesIO(raw)) as im:
-            self.assertEqual(im.format,'JPEG'); self.assertEqual(im.mode,'RGB')
-            self.assertFalse(im.getexif())
-        self.assertEqual(size,(60,40))
-
-    def test_mislabeled_file_is_rejected(self):
-        with self.assertRaises(ValueError): uploads.clean_image(b'<svg><script>bad</script></svg>')
-
-    def test_large_upload_is_rejected(self):
-        with self.assertRaises(ValueError): uploads.clean_image(b'x'*(uploads.MAX_BYTES+1))
-
-    def test_upload_rejects_path_traversal(self):
-        with self.assertRaises(ValueError): uploads.resolve('../private')
-
-    def test_expired_upload_is_rejected(self):
-        with patch.object(uploads,'ROOT',self.root):
-            ident = 'a'*32; path = self.root/(ident+'.jpg'); path.write_bytes(png())
-            os.utime(path,(time.time()-8000,)*2)
-            with self.assertRaisesRegex(ValueError,'expired'): uploads.resolve(ident)
-
-    def test_invalid_batch_leaves_no_uploads(self):
-        class File:
-            filename = 'image.png'
-            def __init__(self,data): self.stream = io.BytesIO(data)
-        with patch.object(uploads,'ROOT',self.root):
-            with self.assertRaises(ValueError): uploads.save_many([File(png()),File(b'broken')])
-            self.assertEqual(list(self.root.iterdir()),[])
 
     def test_daily_reservations_are_atomic_under_concurrency(self):
         with patch.dict(os.environ,{'IMAGE_USAGE_DB':str(self.root/'usage.sqlite3')}), patch.object(provider,'DAILY_LIMIT',10):

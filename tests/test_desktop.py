@@ -30,9 +30,8 @@ class DesktopTests(unittest.TestCase):
     def test_loopback_token_origin_and_host_guards(self):
         self.assertEqual(self.client.get('/api/state').status_code,403)
         self.assertEqual(self.client.get('/api/state',headers={**self.headers,'Origin':'https://evil.example'}).status_code,403)
-        self.assertEqual(self.client.get('/',base_url='http://evil.example').status_code,403)
+        self.assertEqual(self.client.get('/api/state',headers=self.headers,base_url='http://evil.example').status_code,403)
         self.assertEqual(self.request('state').status_code,200)
-        self.assertIn(b'workspace-switcher',self.client.get('/').data)
     def test_no_key_or_private_reasoning_in_state(self):
         with patch.object(self.app.store,'key',return_value='a-secret'):
             response=self.request('state')

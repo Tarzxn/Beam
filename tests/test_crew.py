@@ -53,6 +53,7 @@ class CrewTests(unittest.TestCase):
         self.folder = self.root / 'project'
         self.folder.mkdir()
         self.store = Store(self.root / 'data')
+        self.store.save_settings({'reflection':'off'})  # review passes have their own tests
         self.agent = Agent(self.store)
         self.project = self.store.add_project(self.folder)
         self.pid = self.project['id']
@@ -404,6 +405,7 @@ class CrewApiTests(unittest.TestCase):
         self.app = create_app(self.root / 'data', 'crew-fixture-token')
         self.client = self.app.test_client()
         self.headers = {'X-Beam-Token': 'crew-fixture-token'}
+        self.app.store.save_settings({'reflection':'off'})
         self.pid = self.app.store.add_project(folder)['id']
 
     def tearDown(self):

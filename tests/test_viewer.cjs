@@ -16,9 +16,9 @@ with tempfile.TemporaryDirectory(prefix='.viewer-test-', dir='.') as temp:
             writer(target,mesh)
             fixtures[name][ext] = base64.b64encode(target.read_bytes()).decode('ascii')
 print(json.dumps(fixtures))
-`],{cwd:path.resolve(__dirname,'..'),encoding:'utf8',maxBuffer:16*1024*1024}));
+`],{cwd:path.resolve(__dirname,'..','worker'),encoding:'utf8',maxBuffer:16*1024*1024}));
 const src=fs.readFileSync(require('path').join(__dirname,'../static/app.js'),'utf8');
-const code=src.slice(src.indexOf('function parseGlb(buf)'),src.indexOf('// ───────────────────────────── Wiring'));
+const start=src.indexOf('function parseGlb(buf)'), code=src.slice(start,src.indexOf('const $=s=>document.querySelector',start));   // the two pure parsers, before any DOM code
 const ctx={TextDecoder,DataView,Float32Array,Uint32Array,Uint8Array,ArrayBuffer,Math,Map,JSON,Infinity,Error};
 vm.createContext(ctx);vm.runInContext(code,ctx);
 for(const [name,fixture] of Object.entries(fixtures)) {
