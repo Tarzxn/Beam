@@ -49,7 +49,8 @@ class Service:
                     parsed = urlparse(origin)
                     if parsed.scheme not in ('https', 'http') or not parsed.hostname or parsed.username or parsed.password: raise ValueError('Invalid Beam Cloud origin')
                     self.app.agent.integrations.config.blocked_origins.add(origin.rstrip('/'))
-                return {'ready': True, 'version': '0.8.0-cloud', 'storage': 'Codespace'}
+                from cloud_runtime import VERSION
+                return {'ready': True, 'version': VERSION, 'storage': 'Codespace'}
             if not existing or not self.app: raise ValueError('Connect the Codespace first')
             app = self.app
         path, method = data.get('path', ''), data.get('method', 'GET')

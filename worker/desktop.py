@@ -86,8 +86,11 @@ def create_app(directory, token=None, cloud=False):
         settings=store.settings()
         try:key=store.key()
         except ValueError:key=''
-        selected=settings.get('model','beam')
-        return jsonify(**model_catalog.catalog(key,selected),selected=selected,reflection=settings.get('reflection','auto'),crew_parallel=settings.get('crew_parallel',1),
+        selected=settings.get('model','auto' if cloud else 'beam')
+        catalog=model_catalog.catalog(key,selected)
+        if cloud and selected != 'auto':
+            catalog['models'].insert(0,model_catalog.meta('auto'))
+        return jsonify(**catalog,selected=selected,reflection=settings.get('reflection','auto'),crew_parallel=settings.get('crew_parallel',1),
                        efforts={name:{'reflect':model_catalog.reflect_rounds(name,settings)} for name in ('low','medium','high','max')})
 
     @app.post('/api/settings')
@@ -132,10 +135,18 @@ def create_app(directory, token=None, cloud=False):
     @app.post('/api/browser')
     def browser_control():
         data=request.get_json();method=data.get('method','snapshot')
-        if method not in ('open','snapshot','action','restart','close'):raise ValueError('Unsupported browser operation')
+        supported = ('open','snapshot','action','restart','close')
+        if cloud:supported += ('control','input','remember')
+        if method not in supported:raise ValueError('Unsupported browser operation')
         args=data.get('arguments',{})
-        if not isinstance(args,dict):raise ValueError('Browser arguments must be an object')
-        return jsonify(agent.integrations.browser.call(method,**args))
+        if not isinstance(args,dict) or 'manual' in args:raise ValueError('Invalid browser arguments')
+        return jsonify(agent.integrations.browser.call(method,manual=True,**args))
+
+    if cloud:
+        @app.get('/api/browser/frame')
+        def browser_frame():
+            data=agent.integrations.browser.call('frame',manual=True)
+            return send_file(io.BytesIO(data),mimetype='image/jpeg') if data else ('',204)
 
     @app.get('/api/browser/image')
     def browser_image():

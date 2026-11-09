@@ -736,7 +736,7 @@ def _legacy_ops_to_tree(ops, ctx):
 # --------------------------------------------------------------------------
 # public API
 # --------------------------------------------------------------------------
-def build_program(spec):
+def build_program(spec, *, ground=True):
     """-> (Manifold, notes[list[str]], info{dict}). Raises CADError when nothing usable results."""
     if not AVAILABLE:
         raise CADError("CAD kernel (manifold3d) is not installed")
@@ -771,7 +771,8 @@ def build_program(spec):
     if biggest < .01 or biggest > 20000:
         raise CADError(f'Model spans {biggest:.5g} mm. Use explicit mm/cm/in units and keep the span within 0.01–20,000 mm; it was not rescaled.')
     # centre on X/Y, sit on the build plate
-    solid = solid.translate([-(box[0] + box[3]) / 2, -(box[1] + box[4]) / 2, -box[2]])
+    if ground:
+        solid = solid.translate([-(box[0] + box[3]) / 2, -(box[1] + box[4]) / 2, -box[2]])
 
     mesh = solid.to_mesh()
     if len(mesh.tri_verts) > MAX_TRIANGLES:

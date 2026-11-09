@@ -308,7 +308,7 @@ def produce_artifact(root,item,cancelled=None,progress=None):
         report=Path(root)/Path(result['path']).with_name(Path(result['path']).stem+'-validation.json')
         if report.exists():
             info=json.loads(report.read_text('utf-8'))
-            result['details']={k:info[k] for k in ('size_mm','volume_mm3','triangles','components','watertight','winding_consistent','assembly_parts','parts_archive','bill_of_materials','dimension_sheet','dimension_checks','surface_area_mm2','quality') if k in info}
+            result['details']={k:info[k] for k in ('size_mm','volume_mm3','triangles','components','watertight','winding_consistent','assembly_parts','assembly_checks','exploded_view','parts_archive','bill_of_materials','dimension_sheet','dimension_checks','surface_area_mm2','quality') if k in info}
             if info.get('parts_archive'):result['details']['parts_archive']=(Path(result['path']).parent/info['parts_archive']).as_posix()
             result['details']['source']=str(Path(result['path']).with_suffix('.model.json')).replace('\\','/')
             result['details']['validation']=str(report.relative_to(root)).replace('\\','/')

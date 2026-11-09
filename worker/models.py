@@ -13,6 +13,7 @@ import time
 import requests
 
 DEFAULT_MODEL = 'beam'           # original Reflection Beam alias, always kept
+AUTO_MODEL = 'auto'
 TAGS_URL = 'https://ollama.com/api/tags'
 _VALID = re.compile(r'^[A-Za-z0-9][A-Za-z0-9._:/-]{0,79}$')
 
@@ -58,7 +59,24 @@ def clean(model, fallback=DEFAULT_MODEL):
 
 
 def meta(model):
+    if model == AUTO_MODEL:
+        return {'id': model, 'label': 'Auto', 'note': 'Choose an available Ollama Cloud model for this task and effort', 'pick': 'default'}
     return _BY_ID.get(model) or {'id': model, 'label': model, 'note': '', 'usage': 2, 'think': 'bool', 'pick': 'other'}
+
+
+def route(prompt, effort, key):
+    """Rank compatible models using the task, effort and the account's live list."""
+    ids = live_ids(key)
+    if not ids:
+        return DEFAULT_MODEL
+    cad = re.search(r'\b(?:cad|3d|stl|step file|glb|mesh|mechanical assembly)\b', prompt, re.I)
+    coding = re.search(r'\b(?:app|server|code|bug|fix|repo|script|build|test|implement|refactor|debug)\b', prompt, re.I)
+    lightweight = ('gpt-oss:20b', 'deepseek-v4-flash')
+    general = ('gpt-oss:120b', 'qwen3.5:397b', 'gemma4:31b', DEFAULT_MODEL)
+    specialist = ('qwen3.5:397b', 'minimax-m2.7', 'deepseek-v4-flash') if cad or coding else ()
+    premium = ('glm-5.2', 'kimi-k2.6', 'deepseek-v4-pro') if effort == 'max' else ()
+    ordered = (lightweight + specialist + general) if effort == 'low' else premium + specialist + general + lightweight
+    return next((name for name in ordered if name in ids), sorted(ids)[0])
 
 
 def think_value(model, effort, enabled):
@@ -107,7 +125,7 @@ def live_ids(key, ttl=600):
 def catalog(key=None, selected=None):
     """Picker entries: curated models that exist for this key, plus any other live models."""
     ids = live_ids(key)
-    entries = []
+    entries = [meta(AUTO_MODEL)] if selected == AUTO_MODEL else []
     for item in CURATED:
         available = ids is None or item['id'] in ids or item['id'] == DEFAULT_MODEL
         if available:

@@ -7,11 +7,70 @@ import numpy as np
 import mesh_engine as me
 
 
+def assembly_checks(spec):
+    """Measure fit before combining parts and optionally lay the parts out for viewing."""
+    from cad_engine import build_program
+    assembly = spec.get('assembly', {})
+    checks = assembly.get('checks', [])
+    if not checks and not assembly.get('exploded_view'):
+        return [], []
+    labels = assembly.get('parts', [])
+    tree = spec.get('tree', {})
+    if tree.get('op') != 'union' or any(key in tree for key in ('position','rotation','scale')):
+        raise ValueError('Use an untransformed top-level union and position each assembly child individually')
+    nodes = tree.get('children', [])
+    if not isinstance(labels, list) or not 2 <= len(labels) <= 20 or len(labels) != len(nodes):
+        raise ValueError('Assembly checks and exploded view need 2–20 named top-level children')
+    if not all(isinstance(label, str) and label.strip() for label in labels) or len(set(labels)) != len(labels):
+        raise ValueError('Give each assembly child a distinct name')
+    if not isinstance(checks, list) or len(checks) > 40:
+        raise ValueError('Use up to 40 assembly checks')
+    solids = {label: build_program({'tree': node}, ground=False)[0] for label, node in zip(labels, nodes)}
+    measured = []
+    for check in checks:
+        if not isinstance(check, dict):
+            raise ValueError('Each assembly check must identify two parts and its limits')
+        a, b = check.get('a'), check.get('b')
+        if not isinstance(a, str) or not isinstance(b, str) or a not in solids or b not in solids or a == b:
+            raise ValueError('Each assembly check needs two different named parts')
+        clearance = me.number(check.get('min_gap_mm', 0), 0, 1000)
+        overlap_limit = me.number(check.get('max_overlap_mm3', 0.001), 0, 1000)
+        overlap = (solids[a] ^ solids[b]).volume()
+        gap = solids[a].min_gap(solids[b], clearance + 0.1) if clearance else None
+        if overlap > overlap_limit or (gap is not None and gap + .0001 < clearance):
+            raise ValueError(f'Fit check failed for {a} and {b}: overlap {overlap:.4f} mm³, gap {gap if gap is not None else "not measured"} mm')
+        measured.append({'a':a, 'b':b, 'overlap_mm3':overlap, 'gap_mm_at_least':gap,
+                         'min_gap_mm':clearance, 'max_overlap_mm3':overlap_limit})
+    return measured, list(solids.values()) if assembly.get('exploded_view') else []
+
+
+def write_exploded(path, solids, material):
+    from cad_engine import mesh_arrays
+    vertices, faces = [], []
+    cursor = offset = 0
+    for solid in solids:
+        mesh = me.Mesh(*mesh_arrays(solid))
+        mesh.validate(connected=False)
+        coords = mesh.vertices.copy()
+        coords[:, 0] += cursor - coords[:, 0].min()
+        cursor = coords[:, 0].max() + max(5, np.ptp(coords[:, 0]) * .18)
+        vertices.append(coords)
+        faces.append(mesh.faces + offset)
+        offset += len(coords)
+    exploded = me.Mesh(np.concatenate(vertices), np.concatenate(faces)).grounded()
+    exploded.validate(connected=False)
+    target = path.with_name(path.stem+'-exploded.glb')
+    me.write_glb(target, exploded, material)
+    me.read_glb(target).validate(connected=False)
+    return target.name
+
+
 def build_files(path, spec):
     import cad_engine
     from cad_quality import prepare_model,check_constraints,dimension_sheet
     original_spec=spec
     spec,quality=prepare_model(spec)
+    fit, exploded_solids = assembly_checks(spec)
     path = Path(path)
     node = spec.get('tree', spec) if isinstance(spec, dict) else None
     notes = []
@@ -48,6 +107,10 @@ def build_files(path, spec):
     info.update({'exports':{stl.name:stl_check, glb.name:glb_check},
                  'units':{'stl':'millimetres','glb':'metres (Y up)'},
                  'source':source.name, 'visual_review':'not performed by geometry validation'})
+    if fit:
+        info['assembly_checks'] = fit
+    if exploded_solids:
+        info['exploded_view'] = write_exploded(path, exploded_solids, spec.get('material'))
     assembly=spec.get('assembly',{}) if isinstance(spec,dict) else {}
     if assembly.get('export_individual_parts'):
         import zipfile
@@ -61,7 +124,8 @@ def build_files(path, spec):
             rotation=rotations[index] if index<len(rotations) else [90,0,0] if index<2 else [0,90,0] if index<4 else [0,0,0]
             part_solid,_,_=cad_engine.build_program({'tree':{'op':'union','children':[child],'rotation':rotation}})
             part=me.Mesh(*cad_engine.mesh_arrays(part_solid)).grounded();part_info=part.validate()
-            stem=''.join(c if c.isalnum() else '-' for c in str(label)).strip('-') or f'part-{index+1}'
+            name=''.join(c if c.isalnum() else '-' for c in str(label)).strip('-')[:70]
+            stem=f'{index+1:02d}-{name or "part"}' if fit or exploded_solids else name or f'part-{index+1}'
             part_stl=parts_dir/(stem+'.stl');part_glb=parts_dir/(stem+'.glb')
             me.write_stl(part_stl,part);me.write_glb(part_glb,part)
             me.read_stl(part_stl).validate();me.read_glb(part_glb).validate()

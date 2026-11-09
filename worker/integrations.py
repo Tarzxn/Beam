@@ -10,7 +10,7 @@ class Integrations:
  def browser(self):
   if self._browser is None:
    from browser_tools import BrowserService
-   self._browser=BrowserService(self.config)
+   self._browser=BrowserService(self.config,cloud=getattr(self.config.store,'cloud',False))
   return self._browser
  @property
  def mcp(self):

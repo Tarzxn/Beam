@@ -172,10 +172,12 @@ class ManagedServers:
     def __init__(self,data_dir):
         self.directory=Path(data_dir)/'server-logs';self.directory.mkdir(exist_ok=True)
         self.entries={};self.lock=threading.RLock()
-    def start(self,command,root):
+    def start(self,command,root,preview_port=None):
+        if preview_port is not None and (type(preview_port) is not int or not 1024<=preview_port<=65535):
+            raise ValueError('Use an unprivileged TCP preview port between 1024 and 65535')
         ident=uuid.uuid4().hex[:12];log=self.directory/(ident+'.log')
         with log.open('wb') as output:process=launch(command,root,output)
-        entry={'id':ident,'command':command,'root':str(root),'log':log,'process':process}
+        entry={'id':ident,'command':command,'root':str(root),'log':log,'process':process,'preview_port':preview_port}
         with self.lock:self.entries[ident]=entry
         time.sleep(.15)
         return self.status(ident)
@@ -183,7 +185,13 @@ class ManagedServers:
         with self.lock:entry=self.entries.get(ident)
         if not entry:raise ValueError('Unknown Beam-managed server ID')
         process=entry['process'];raw=entry['log'].read_bytes()[-20000:]
-        return {'id':ident,'command':entry['command'],'running':process.poll() is None,'exit_code':process.poll(),'output':raw.decode('utf-8',errors='replace')}
+        result={'id':ident,'command':entry['command'],'running':process.poll() is None,'exit_code':process.poll(),'output':raw.decode('utf-8',errors='replace')}
+        if result['running'] and entry['preview_port']:
+            result['preview_url']=f"http://127.0.0.1:{entry['preview_port']}"
+        return result
+    def preview_allowed(self,port):
+        with self.lock:
+            return any(entry['preview_port']==port and entry['process'].poll() is None for entry in self.entries.values())
     def stop(self,ident):
         with self.lock:entry=self.entries.get(ident)
         if not entry:raise ValueError('Unknown Beam-managed server ID')

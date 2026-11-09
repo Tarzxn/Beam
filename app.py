@@ -132,7 +132,10 @@ class Transport:
                     self.write({'operation': 'init', 'owner': str(self.identity['user']['id']), 'codespace': self.identity['codespace'], 'github_token': self.identity['access_token'], 'origin': self.identity.get('public_origin', '')})
                     continue
                 if 'error' in packet: raise ValueError(packet['error'])
-                if packet.get('result', {}).get('ready'): break
+                if packet.get('result', {}).get('ready'):
+                    if packet['result'].get('version') != '0.9.0-cloud':
+                        raise ValueError('An older Beam worker is still running. Stop this Codespace in GitHub, then reconnect to Ray.')
+                    break
                 if time.monotonic() > deadline: raise ValueError('Codespace setup timed out; reconnect to retry')
             self.status, self.message = 'ready', 'Connected. Your workspace is stored in this Codespace.'
         except Exception as error:
@@ -211,7 +214,7 @@ def create_app(config=None, pool=None):
 
     def origin():
         value = app.config['PUBLIC_URL'].rstrip('/')
-        if not value: raise ValueError('Set PUBLIC_URL to the HTTPS address of your Beam Cloud service')
+        if not value: raise ValueError('Set PUBLIC_URL to the HTTPS address of your Ray service')
         return value
 
     def encode(data): return cipher.encrypt(json.dumps(data).encode()).decode()
@@ -270,7 +273,7 @@ def create_app(config=None, pool=None):
     def too_large(error): return jsonify(error='This request exceeds the 8 MB limit'), 413
 
     @app.get('/healthz')
-    def health(): return jsonify(ok=True, configured=not bool(g.setup_missing), name='Beam Cloud', version='0.8.1-cloud')
+    def health(): return jsonify(ok=True, configured=not bool(g.setup_missing), name='Ray', version='0.9.0-cloud')
 
     @app.get('/auth/login')
     def login():
@@ -344,14 +347,14 @@ def create_app(config=None, pool=None):
         item = app.pool.get(g.identity)
         if not item or item.status != 'ready': return 'Reconnect your Codespace in Beam, then connect Google again.', 409
         answer = item.api('/api/cloud/google/callback', 'POST', {k: request.args.get(k, '') for k in ('state','code','error')})
-        return ('Google connected. Return to the Beam Cloud tab.' if answer['status'] == 200 else 'Google sign-in did not finish. Return to Beam Cloud and try again.'), answer['status']
+        return ('Google connected. Return to the Ray tab.' if answer['status'] == 200 else 'Google sign-in did not finish. Return to Beam Cloud and try again.'), answer['status']
 
     @app.route('/api/<path:path>', methods=['GET', 'POST'])
     def proxy(path):
-        if path.startswith(('computer', 'privacy/')): return jsonify(error='Beam Cloud runs only in your Codespace'), 404
+        if path.startswith(('computer', 'privacy/')): return jsonify(error='Ray runs only in your Codespace'), 404
         item = app.pool.get(g.identity)
         if not item or item.status != 'ready':
-            if path == 'state': return jsonify(name='Beam Cloud', version='0.8.1-cloud', cloud=True, connected=False, projects=[], sessions=[], active={}, configured=False, theme='dark', effort='high', command_budget=8)
+            if path == 'state': return jsonify(name='Ray', version='0.9.0-cloud', cloud=True, connected=False, projects=[], sessions=[], active={}, configured=False, theme='dark', effort='high', command_budget=8)
             return jsonify(error='Connect your Codespace first', reconnect=True), 409
         body = request.get_json() if request.method == 'POST' else None
         if request.method == 'POST' and not isinstance(body, dict): raise ValueError('Expected a JSON object')

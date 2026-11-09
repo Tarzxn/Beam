@@ -12,13 +12,15 @@ from cryptography.fernet import Fernet
 from flask import jsonify, request
 from beam_core import Agent, Store
 
-VERSION = '0.8.0-cloud'
+VERSION = '0.9.0-cloud'
 WORKSPACES = Path('/workspaces')
 PRIVATE_NAMES = {'.beam-cloud', '.beam-crew', '.beam-worker', '.beam-projects', '.beam-cloud-runtime'}
 GRACE_SECONDS = 120
 
 
 class CloudStore(Store):
+    cloud = True
+
     def __init__(self, directory):
         folder = Path(directory)
         folder.mkdir(parents=True, exist_ok=True)
@@ -55,6 +57,10 @@ class CloudStore(Store):
 
 class CloudAgent(Agent):
     privacy_choices = ['cloud', 'stop']
+
+    def __init__(self, store):
+        super().__init__(store)
+        self.integrations.config.preview_allowed = self.servers.preview_allowed
 
     def start(self, ident, prompt, mode='ask', effort='high', **kwargs):
         kwargs['extra_context'] = kwargs.get('extra_context', '') + (
@@ -171,12 +177,12 @@ def configure(app):
     @app.before_request
     def cloud_boundary():
         if request.path.startswith('/api/computer') or request.path.startswith('/api/privacy/'):
-            return jsonify(error='Beam Cloud only connects to your Codespace'), 404
+            return jsonify(error='Ray only connects to your Codespace'), 404
         if lifecycle.closing and request.method != 'GET': return jsonify(error='Pausing this Codespace. Reconnect to resume.'), 409
 
     def state():
         data = original_state().get_json()
-        return jsonify(**{**data, 'name': 'Beam Cloud', 'version': VERSION, 'cloud': True, **lifecycle.state()})
+        return jsonify(**{**data, 'name': 'Ray', 'version': VERSION, 'cloud': True, **lifecycle.state()})
     app.view_functions['state'] = state
 
     original_settings = app.view_functions['settings']

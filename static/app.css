@@ -218,7 +218,7 @@ body.crew-mode #toggle-terminal,body.crew-mode #toggle-inspector{display:none}bo
 /* Cloud additions preserve the desktop palette and workspace layout. */
 :root{color-scheme:dark;--cloud-accent:#d58d66}
 .cloud-brand{font-size:11px;font-weight:500;letter-spacing:.05em;margin-left:6px;color:var(--text-muted,#a5a49b)}
-#reveal-project,#import-history,.privacy-settings,.computer-transfer,#browser-show,#browser-visible{display:none!important}
+#reveal-project,#import-history,.privacy-settings,.computer-transfer,#browser-visible{display:none!important}
 .cloud-overlay{position:fixed;inset:0;z-index:1000;background:var(--bg,#20211e);display:grid;place-items:center;padding:24px}
 .cloud-overlay.hidden{display:none}.cloud-connect-card{width:min(540px,100%);border:1px solid var(--border,#43433c);padding:34px;border-radius:14px;background:var(--panel,#282923)}
 .cloud-connect-card h1{font-size:29px;letter-spacing:-.04em;margin:10px 0}.cloud-connect-card p{line-height:1.65;color:var(--text-muted,#afafa4)}
@@ -258,3 +258,15 @@ body.crew-mode #toggle-terminal,body.crew-mode #toggle-inspector{display:none}bo
 .model-actions{display:flex;justify-content:flex-end;align-items:center;gap:12px}.model-bot-field{display:flex;flex-direction:column;gap:6px;margin-top:12px}.model-bot-field small{color:var(--muted)}
 .notice.reflect{border-left:3px solid var(--dim)}.notice.reflect.ok{border-left-color:var(--green);color:var(--green)}.notice.reflect.revise{border-left-color:var(--orange)}
 #mode option[value=auto]{color:var(--orange)}
+
+/* Codespace browser and composer command menu */
+#browser-viewport { border-radius:8px; overflow:hidden; outline-offset:3px; }
+#browser-viewport img { display:block; width:100%; height:auto; margin:0; user-select:none; }
+#browser-viewport img.hidden { display:none; }
+#browser-viewport.manual img { cursor:crosshair; }
+.browser-actions { flex-wrap:wrap; }
+.slash-menu { display:grid; gap:2px; padding:6px; max-height:210px; overflow:auto; }
+.slash-menu.hidden { display:none; }
+.slash-item { padding:7px 10px; text-align:left; color:inherit; border:0; border-radius:6px; background:transparent; }
+.slash-item:hover,.slash-item:focus-visible { background:rgba(127,127,127,.16); }
+.slash-usage p { margin:.65em 0; }

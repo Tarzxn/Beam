@@ -19,7 +19,7 @@ import ast
 from integrations import Integrations
 import models as model_catalog
 from remote_tools import RemoteComputers, OPERATIONS as REMOTE_OPERATIONS, BLOCKED as REMOTE_BLOCKED, execute_remote
-from privacy_guard import PrivacyGuard, PrivacyPause
+from privacy_guard import PrivacyGuard, PrivacyPause, detect_sensitive
 from command_policy import fingerprint,inspect_project,reusable_check
 from agent_runtime import ManagedServers, runtime_info, run_command, stop_process, validate_command
 
@@ -238,7 +238,7 @@ TOOLS += [
  tool('artifact_help','Read format schemas and quality guidance before making documents, spreadsheets, slides, charts or 3D files.',{'kind':STR},[]),
  tool('inspect_artifact','Read structured contents, dimensions and quality checks from a generated file. This is text/geometry inspection, not visual understanding.',{'path':STR},['path']),
  tool('runtime_info','Get the actual operating system, shell, available Python/Git and testing guidance.'),
- tool('start_server','Start a persistent development server in this project with log capture. Requires approval. Returns an ID; check server_status and stop_server. Never start duplicate servers.',{'command':STR},['command']),
+ tool('start_server','Start a persistent development server. For a private Codespace browser preview, bind to 127.0.0.1 and set preview_port to the port in the command. Check server_status and stop_server. Never start duplicates.',{'command':STR,'preview_port':{'type':'integer','minimum':1024,'maximum':65535}},['command']),
  tool('server_status','Read bounded logs and process status of a Beam-managed server.',{'id':STR},['id']),
  tool('stop_server','Stop only the specified Beam-managed server and its process tree. Requires approval.',{'id':STR},['id']),
  tool('cad_help','Read the supported CAD schema, dimensions, boolean/assembly rules and quality guidance before building a 3D model.'),
@@ -318,7 +318,7 @@ class Agent:
         root=Path(self.store.project(session['project_id'])['path'])
         if not root.is_dir():raise ValueError('The project folder no longer exists. Open its new location first.')
         if effort not in EFFORTS: raise ValueError('Unknown effort level')
-        model=model_catalog.clean(model or self.store.settings().get('model'))
+        model=model_catalog.clean(model or self.store.settings().get('model'), 'auto' if getattr(self.store,'cloud',False) else MODEL)
         if mode not in {'ask','edit','plan','auto'}:
             raise ValueError('Unknown permission mode')
         if not prompt.strip() or len(prompt) > 50000:
@@ -430,6 +430,8 @@ class Agent:
         root = Path(self.store.project(self.store.session(ident)['project_id'])['path'])
         config=EFFORTS[run.effort]
         remote=getattr(run,'remote',None)
+        if run.model==model_catalog.AUTO_MODEL:
+            run.model=model_catalog.route(messages[-1].get('content',''),run.effort,key)
         execution_runtime={'platform':'linux','shell':'bash','python':'python3','guidance':'Commands execute inside GitHub Codespaces, never on the Windows PC.'} if remote else self.runtime
         context = SYSTEM + '\nRuntime: '+json.dumps(execution_runtime)+'\nConnected services: '+json.dumps(self.integrations.summary())+f'\nCommand budget: {run.command_budget}. Use dedicated tools for reads, research and Google work; commands are reserved for execution/builds/tests.\nProject: {root}\nEffort: {run.effort}. '+config['instruction']+f'\nPermission mode: {mode}. '
         if re.search(r'(?i)\b(3d|stl|glb|model|cad|finger.?joint)\b',messages[-1].get('content','')):
@@ -439,7 +441,7 @@ class Agent:
         task_start=time.monotonic()
         context += ('Plan only. No writes, generation or shell commands.' if mode == 'plan' else
                     'Ask approval before edits, file generation and every shell command.' if mode == 'ask' else
-                    'Full auto: the user pre-approved edits, file generation, commands, browser actions and connected-service writes. Do not ask for permission; hard safety blocks still apply. Never take destructive or irreversible external actions the task does not require.' if mode == 'auto' else
+                    'Always approve: routine actions are pre-approved. Privacy checks and safety blocks still apply. Never take destructive or irreversible external actions the task does not require.' if mode == 'auto' else
                     'Project edits/artifact generation are authorized. Every shell command needs approval.')
         guidance = root / 'AGENTS.md'
         if guidance.is_file() and not remote:
@@ -448,6 +450,14 @@ class Agent:
             except (ValueError,OSError):
                 pass
         context+='\n'+getattr(run,'extra_context','')
+        if getattr(self.store,'cloud',False):
+            context+=(
+                '\nFor coding, inspect the relevant files and existing checks first. Keep a short checklist of the requested behaviors. '
+                'After editing, exercise the feature through its normal entry point, run the relevant tests with a bounded timeout, '
+                'and inspect the diff for unrelated changes. Diagnose a failure from its output before retrying. '
+                'Report which checks passed and which you could not run. Do not claim a successful build from a syntax check alone. '
+                'If the user is controlling the browser, leave it alone and continue independent work.'
+            )
         if remote:
             context=context.replace('Project: '+str(root),'Project: /workspaces/.beam-projects/'+self.store.session(ident)['project_id'])
             context+='\nExecution target: GitHub Codespaces. POSIX bash and python3 are authoritative for this task; Windows instructions do not apply. File tools and artifact generation operate only on the remote workspace. Browser, MCP and persistent-server tools are unavailable in remote tasks. Website reading/search and connected Google APIs remain desktop connections. Never run a local command or pretend a remote file was saved on the PC. No local fallback is allowed. Commands have the Codespace account permissions. '+('The user has authorized ordinary task commands on this Codespace without repeated approvals. Privilege or external publishing actions still require approval.' if remote['trusted'] and mode=='edit' else 'Normal approval rules apply.')
@@ -491,7 +501,7 @@ class Agent:
                             self.store.emit(ident,'delta',text=pending)
                             pending,last_emit = '',time.monotonic()
                         if packet.get('done'):
-                            self.store.emit(ident,'usage',input_tokens=packet.get('prompt_eval_count',0),output_tokens=packet.get('eval_count',0))
+                            self.store.emit(ident,'usage',model=run.model,input_tokens=packet.get('prompt_eval_count',0),output_tokens=packet.get('eval_count',0))
                     if pending:
                         self.store.emit(ident,'delta',text=pending)
                     run.response = None
@@ -576,7 +586,19 @@ class Agent:
         self.store.emit(ident, 'reflect', state='start', round=run.reflections, of=rounds)
         run.activity('reviewing', 'Reviewing its own work')
         request = next((m['content'] for m in reversed(messages) if m.get('role') == 'user' and not m['content'].startswith('[Review]')), '')
-        evidence = [str(m.get('tool_name', 'tool')) + ': ' + str(m.get('content', ''))[:600] for m in messages[-60:] if m.get('role') == 'tool'][-14:]
+        turn = next((i for i in range(len(messages)-1,-1,-1) if messages[i].get('role')=='user' and not messages[i].get('content','').startswith('[Review]')),0)
+        tool_results = [m for m in messages[turn:] if m.get('role')=='tool']
+        priority = {'run_command','git_diff','browser_open','browser_snapshot','inspect_artifact','generate_artifact','generate_model'}
+        important = [m for m in tool_results if m.get('tool_name') in priority][-12:]
+        evidence = [str(m.get('tool_name','tool')) + ': ' + str(m.get('content',''))[:1600] for m in (important or tool_results[-10:])]
+        if getattr(self.store,'cloud',False) and mode!='plan' and any(m.get('tool_name') in ('edit_file','write_file') for m in tool_results):
+            root=Path(self.store.project(self.store.session(ident)['project_id'])['path'])
+            try:
+                diff=git_info(root,diff=True)
+                if diff.get('exit_code')==0 and diff['output']:
+                    evidence.append('Current tracked diff:\n'+diff['output'][:10000])
+            except (OSError, subprocess.TimeoutExpired):
+                pass
         brief = ('USER REQUEST:\n' + request[:6000] + '\n\nTOOL RESULTS (latest):\n' + ('\n'.join(evidence) or '(none)')
                  + '\n\nDRAFT ANSWER:\n' + draft[:8000])
         payload = {'model': run.model, 'stream': False, 'think': model_catalog.think_value(run.model, 'medium', True),
@@ -584,23 +606,25 @@ class Agent:
                    'options': {'num_predict': 2500}}
         payload = self.privacy.prepare(payload, run, lambda categories, preview: self.request_privacy(ident, run, categories, preview),
                                        emit=lambda event_type, **data: self.store.emit(ident, event_type, **data))
-        verdict, issues = 'ok', []
+        verdict, issues = 'unavailable', []
         try:
             response = requests.post(CHAT_URL, headers={'Authorization': f'Bearer {key}'}, json=payload, timeout=(15, 120))
             if response.status_code == 200:
-                content = (response.json().get('message') or {}).get('content', '')
+                packet=response.json()
+                self.store.emit(ident,'usage',model=run.model,input_tokens=packet.get('prompt_eval_count',0),output_tokens=packet.get('eval_count',0))
+                content = (packet.get('message') or {}).get('content', '')
                 found = re.search(r'\{.*\}', content, re.S)
                 data = json.loads(found.group(0)) if found else {}
-                verdict = data.get('verdict', 'ok')
+                verdict = data.get('verdict', 'unavailable')
                 issues = [str(i)[:400] for i in (data.get('issues') or []) if str(i).strip()][:5]
         except PrivacyPause:
             raise
         except Exception:
-            verdict = 'ok'   # a failed review must never block or fake a result
+            verdict = 'unavailable'
         if run.cancelled.is_set():
             return False
         if verdict != 'revise' or not issues:
-            self.store.emit(ident, 'reflect', state='ok', round=run.reflections, of=rounds)
+            self.store.emit(ident, 'reflect', state='ok' if verdict=='ok' else 'unavailable', round=run.reflections, of=rounds)
             return False
         self.store.emit(ident, 'reflect', state='revise', round=run.reflections, of=rounds, issues=issues)
         messages.append({'role': 'user', 'content': '[Review] An independent review of your draft found problems. Fix every one that is valid (use tools to verify or repair), then give a corrected final answer. Do not mention this review.\n- ' + '\n- '.join(issues)})
@@ -662,7 +686,15 @@ class Agent:
             if len(new.encode('utf-8')) > MAX_FILE:
                 raise ValueError('File exceeds the 1 MB edit limit')
             diff = ''.join(difflib.unified_diff(old.splitlines(True),new.splitlines(True),fromfile=args['path'],tofile=args['path']))
-        if mutation and mode != 'auto' and (mode == 'ask' or name in {'run_command','start_server','stop_server','browser_action','slides_create','slides_update','mcp_call'}):
+        sensitive = []
+        if getattr(self.store,'cloud',False) and mode=='auto' and (mutation or name in {'web_search','web_research','web_open','browser_open'}):
+            sensitive=sorted({finding['category'] for finding in detect_sensitive(args)})
+            if '[PRIVATE_' in json.dumps(args):
+                raise ValueError('This tool cannot use a redacted placeholder. Ask the user for a safe way to continue.')
+        if sensitive:
+            if not self.request_approval(ident,run,name,{'privacy_categories':sensitive}):
+                return {'denied':True,'message':'Sensitive action declined. Do not try another way to use this data.'}
+        elif mutation and mode != 'auto' and (mode == 'ask' or name in {'run_command','start_server','stop_server','browser_action','slides_create','slides_update','mcp_call'}):
             display_args={**args,'website':self.integrations.browser.state().get('url','')} if name=='browser_action' else args
             if not self.request_approval(ident,run,name,display_args,diff):
                 return {'denied':True,'message':'User denied or stopped this action. Do not attempt an alternate route.'}
@@ -724,6 +756,8 @@ class Agent:
         if name=='inspect_project':return inspect_project(root,self.runtime)
         if name=='start_server':
             run.command_count+=1;self.store.emit(ident,'command_stats',count=run.command_count,budget=run.command_budget,reused=False)
+            if getattr(self.store,'cloud',False) and 'preview_port' in args:
+                return self.servers.start(args['command'],root,preview_port=args['preview_port'])
             return self.servers.start(args['command'],root)
         if name=='server_status':return self.servers.status(args['id'])
         if name=='stop_server':return self.servers.stop(args['id'])
@@ -765,7 +799,7 @@ class Agent:
             result=integrations.browser.call('open',url=args['url']);self.store.emit(ident,'browser',url=result['url'],title=result['title']);return result
         if name=='browser_snapshot':return integrations.browser.call('snapshot')
         if name=='browser_action':
-            result=integrations.browser.call('action',**args);self.store.emit(ident,'browser',url=result['url'],title=result['title']);return result
+            result=integrations.browser.call('action',manual=False,**args);self.store.emit(ident,'browser',url=result['url'],title=result['title']);return result
         if name=='save_browser_download':
             source=integrations.browser.download_path(args['id']);target=project_path(root,args['path'])
             if target.exists():raise ValueError('Output already exists; choose a different download filename')

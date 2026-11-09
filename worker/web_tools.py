@@ -40,11 +40,14 @@ class ConnectionConfig:
   if not isinstance(defaults.get('mcp'),list):defaults['mcp']=[]
   defaults['mcp']=[c for c in defaults['mcp'] if isinstance(c,dict) and all(k in c for k in ('id','name','transport'))]
   return defaults
- def validate(self,url):
+ def validate(self,url,*,preview=False):
   parsed=urlparse(str(url));host=(parsed.hostname or '').lower()
   for origin in self.blocked_origins:
    other=urlparse(origin)
    if parsed.port==other.port and (host in ('localhost','127.0.0.1','::1') or host==other.hostname):raise ValueError('The agent browser cannot access Beam’s own control interface')
+  if getattr(self.store,'cloud',False):
+   local_preview=preview and parsed.scheme=='http' and host=='127.0.0.1' and getattr(self,'preview_allowed',lambda port:False)(parsed.port)
+   return validate_url(url,allow_local=local_preview)
   return validate_url(url,self.read()['browser_allow_local'])
  def save(self,updates):
   with self.lock:

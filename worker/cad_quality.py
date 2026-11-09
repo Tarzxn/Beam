@@ -27,6 +27,8 @@ def prepare_model(spec):
  walk(spec)
  # One wrapper applies conversion to all dimensions, translations and part geometry.
  if factor!=1:
+  if any(spec.get('assembly',{}).get(key) for key in ('checks','exploded_view')):
+   raise ValueError('Assembly checks and exploded views require coordinates in mm')
   if 'tree' in spec:node=spec['tree']
   elif 'shape' in spec or 'op' in spec:node={k:v for k,v in spec.items() if k not in ('units','constraints','quality','material','assembly','plan','parameters')}
   elif spec.get('parts'):node={'op':'union','children':spec['parts']}
@@ -50,6 +52,18 @@ def check_constraints(spec,mesh,info):
    if delta>tolerance:raise ValueError(f'Model {axis} is {actual:.3f} mm; requested {wanted:.3f} mm (tolerance {tolerance:g} mm). Correct the geometry; no automatic rescaling was performed.')
    checks.append({'axis':axis,'requested_mm':wanted,'actual_mm':actual,'difference_mm':delta,'tolerance_mm':tolerance})
  if 'components' in constraints and info['components']!=int(constraints['components']):raise ValueError(f"Expected {constraints['components']} connected component(s), found {info['components']}")
+ for key,limit in (('max_size_mm',max),('min_size_mm',min)):
+  wanted=constraints.get(key)
+  if wanted is None:continue
+  if not isinstance(wanted,list) or len(wanted)!=3:
+   raise ValueError(f'constraints.{key} needs [width, depth, height] with null for unspecified axes')
+  for axis,bound,actual in zip(('width','depth','height'),wanted,info['size_mm']):
+   if bound is None:continue
+   if not isinstance(bound,(int,float)) or not math.isfinite(bound) or bound<=0:
+    raise ValueError('Envelope limits must be finite positive millimetres')
+   if abs(limit(bound,actual)-bound)>tolerance:
+    raise ValueError(f'Model {axis} is {actual:.3f} mm and fails {key} limit {bound:.3f} mm')
+   checks.append({'axis':axis,'limit':key,'limit_mm':bound,'actual_mm':actual,'tolerance_mm':tolerance})
  a,b,c=(mesh.vertices[mesh.faces[:,i]] for i in range(3));info['surface_area_mm2']=float(np.linalg.norm(np.cross(b-a,c-a),axis=1).sum()/2)
  info['dimension_checks']=checks;info['bounds_mm']={'min':mesh.vertices.min(axis=0).tolist(),'max':mesh.vertices.max(axis=0).tolist()}
  return info
